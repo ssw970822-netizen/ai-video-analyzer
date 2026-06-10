@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>영상 자동 분석 파이프라인</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #181b24; --line: #262b38;
+    --text: #e6e9f0; --muted: #8b93a7; --accent: #5b8cff; --ok: #3ecf8e; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px; margin-bottom: 18px;
+  }
+  .preset-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .preset-title { font-size: 13px; font-weight: 600; }
+  .preset-group { display: flex; gap: 6px; }
+  .preset-btn {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 500;
+  }
+  .preset-btn:hover { border-color: var(--accent); color: var(--text); }
+  .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .preset-desc { font-size: 12px; color: var(--muted); }
+  #vid { width: 100%; max-height: 320px; background: #000; border-radius: 8px; }
+  .trim-controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .tc-field { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .tc-inp {
+    background: #11141c; color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; width: 92px; font-size: 13px;
+    font-variant-numeric: tabular-nums; text-align: center;
+  }
+  .trim-len { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .drop {
+    border: 1.5px dashed var(--line); border-radius: 10px; padding: 32px;
+    text-align: center; cursor: pointer; transition: .15s;
+  }
+  .drop:hover { border-color: var(--accent); background: #1d2130; }
+  .drop input { display: none; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button.ok { background: var(--ok); }
+  .steps { list-style: none; padding: 0; margin: 0; }
+  .step {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px;
+  }
+  .step .stepchk { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; flex: none; }
+  .step .badge {
+    width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 13px; font-weight: 700; background: #232838; color: var(--muted); flex: none;
+  }
+  .step.done .badge { background: var(--ok); color: #06281a; }
+  .step.current .badge { background: var(--accent); color: #fff; }
+  .step .title { flex: 1; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
+  .step .title .tool { font-size: 11px; color: var(--accent); font-weight: 500; }
+  .step .opts { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .step .optwrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .step .opt { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+  .step .opt select {
+    background: #11141c; color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 6px; font-size: 11px; cursor: pointer;
+  }
+  .step .opt select:disabled { opacity: .5; cursor: not-allowed; }
+  .step .optinfo {
+    font-size: 11px; color: #9fb0d0; background: #161c28;
+    border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px;
+  }
+  .step .tiers { display: inline-flex; gap: 4px; }
+  .step .tierbtn {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    font-size: 11px; padding: 3px 9px; border-radius: 99px; cursor: pointer;
+  }
+  .step .tierbtn:hover { border-color: var(--accent); color: var(--text); }
+  .step .tierbtn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .step .tierbtn:disabled { opacity: .5; cursor: not-allowed; }
+  .step .tag { font-size: 12px; color: var(--muted); flex: none; }
+  .result {
+    background: #11141c; border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px; margin-top: 6px; font-size: 13px;
+  }
+  .rhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .rtitle { font-weight: 600; }
+  .rtool {
+    font-size: 11px; color: var(--accent); background: #1a2740;
+    border: 1px solid #294063; padding: 2px 8px; border-radius: 99px;
+  }
+  .kv { display: flex; gap: 8px; margin: 2px 0; }
+  .kv b { color: var(--muted); font-weight: 500; min-width: 120px; }
+  a { color: var(--accent); }
+  .err { color: var(--err); font-size: 13px; margin-top: 8px; }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  audio { width: 100%; margin-top: 10px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .scene-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px; margin-top: 12px;
+  }
+  .scene-card {
+    background: #0d1018; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  }
+  .scene-card img { width: 100%; height: 90px; object-fit: cover; display: block; background: #000; }
+  .scene-card .meta { padding: 8px 10px; font-size: 12px; }
+  .scene-card .no { font-weight: 700; color: var(--accent); }
+  .scene-card .tc { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .scene-card .noimg { height: 90px; display: grid; place-items: center; color: var(--muted); background: #000; font-size: 12px; }
+  .analyze-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px; margin-top: 12px;
+  }
+  .acard { background: #0d1018; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .acard img { width: 100%; height: 120px; object-fit: cover; display: block; background:#000; }
+  .acard .body { padding: 10px 12px; }
+  .acard .no { font-weight: 700; color: var(--accent); font-size: 13px; }
+  .acard .tc { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+  .acard .sum { font-size: 13px; margin: 4px 0 8px; }
+  .acard .mood { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { background: #1d2536; color: #aab8d6; font-size: 11px; padding: 2px 8px; border-radius: 99px; }
+  .final { text-align: center; padding: 8px 0; }
+  .final .big { font-size: 16px; font-weight: 700; color: var(--ok); margin-bottom: 4px; }
+  .stats { display: flex; justify-content: center; gap: 24px; margin: 14px 0; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat .v { font-size: 22px; font-weight: 700; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  .dl { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .dl a {
+    display: inline-block; background: #1d2536; border: 1px solid var(--line);
+    color: var(--text); padding: 10px 16px; border-radius: 8px; text-decoration: none; font-size: 13px;
+  }
+  .dl a:hover { border-color: var(--accent); }
+  .dl a .sub { display: block; font-size: 11px; color: var(--muted); }
+  .sublist { max-height: 340px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .subrow { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .subrow:last-child { border-bottom: none; }
+  .subrow .tc { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; width: 130px; }
+  .subrow .tx { flex: 1; }
+  .subrow.changed { background: rgba(62,207,142,.06); }
+  .subrow .old { color: var(--err); text-decoration: line-through; opacity: .7; }
+  .subrow .new { color: var(--ok); }
+  .subrow .arrow { color: var(--muted); margin: 0 4px; }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .tl-wrap { margin-top: 14px; }
+  .tl-lane { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .tl-label { width: 70px; flex: none; font-size: 12px; color: var(--muted); }
+  .tl-track {
+    position: relative; flex: 1; height: 34px; background: #11141c;
+    border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  }
+  .tl-black { position: absolute; top: 0; bottom: 0; background: #000; border-left: 1px solid #444; border-right: 1px solid #444; }
+  .tl-black::after { content: "■"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #777; font-size: 10px; }
+  .tl-spike { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--err); }
+  .tl-spike.clip { background: #ff3b3b; width: 3px; box-shadow: 0 0 4px #ff3b3b; }
+  .tl-ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-left: 80px; margin-top: -4px; }
+  .tl-none { color: var(--ok); font-size: 12px; padding: 8px 0; }
+  .issue-list { margin-top: 12px; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .issue-row { display: flex; gap: 10px; align-items: center; padding: 7px 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .issue-row:last-child { border-bottom: none; }
+  .issue-row .ico { flex: none; }
+  .issue-row .tc { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pill { font-size: 10px; padding: 1px 7px; border-radius: 99px; background: #2a1a1a; color: #ff9b9b; border: 1px solid #5a2a2a; }
+  .pill.clip { background: #3a1010; color: #ff6b6b; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎬 영상 자동 분석 파이프라인</h1>
+  <div class="sub">영상 1개를 올리면 단계별로 분석합니다. 각 단계 결과를 확인하고 OK 하면 다음 단계로 넘어갑니다.</div>
+
+  <div class="panel" id="uploadPanel">
+    <div class="preset-row">
+      <span class="preset-title">분석 프로필</span>
+      <div class="preset-group" id="presetGroup"></div>
+      <span class="preset-desc" id="presetDesc"></span>
+    </div>
+    <label class="drop" id="drop">
+      <input type="file" id="fileInput" accept="video/*" />
+      <div id="dropText">📁 클릭하거나 영상 파일을 여기에 놓으세요</div>
+    </label>
+    <div class="row">
+      <button id="uploadBtn" disabled>업로드</button>
+      <span class="hint" id="fileName"></span>
+    </div>
+  </div>
+
+  <div class="panel" id="trimPanel" style="display:none">
+    <div class="hint" style="margin-bottom:10px">🎬 분석할 <b>구간</b>을 선택하세요. (선택 안 하면 영상 전체)</div>
+    <video id="vid" controls preload="metadata"></video>
+    <div class="trim-controls">
+      <button id="setStart" class="ghost">⏱ 현재 → 시작</button>
+      <label class="tc-field">시작 <input id="startInp" class="tc-inp" placeholder="00:00:00"></label>
+      <label class="tc-field">끝 <input id="endInp" class="tc-inp" placeholder="끝"></label>
+      <button id="setEnd" class="ghost">현재 → 끝 ⏱</button>
+      <button id="trimReset" class="ghost">전체</button>
+      <span class="trim-len" id="trimLen"></span>
+    </div>
+  </div>
+
+  <div class="panel" id="jobPanel" style="display:none">
+    <div class="hint" style="margin-bottom:10px">실행할 단계를 체크하세요. 선행 단계가 필요한 경우 자동으로 함께 선택됩니다.</div>
+    <ul class="steps" id="stepList"></ul>
+    <div class="row">
+      <button id="runBtn">▶ 선택한 단계 실행</button>
+      <button id="selAll" class="ghost">전체 선택</button>
+      <button id="selNone" class="ghost">전체 해제</button>
+    </div>
+    <div class="err" id="errBox" style="display:none"></div>
+    <div id="resultBox"></div>
+  </div>
+</div>
+
+<script>
+const API = "";
+let job = null;
+
+const fileInput = document.getElementById("fileInput");
+const uploadBtn = document.getElementById("uploadBtn");
+const fileNameEl = document.getElementById("fileName");
+const dropText = document.getElementById("dropText");
+const jobPanel = document.getElementById("jobPanel");
+const stepList = document.getElementById("stepList");
+const runBtn = document.getElementById("runBtn");
+const selAllBtn = document.getElementById("selAll");
+const selNoneBtn = document.getElementById("selNone");
+const errBox = document.getElementById("errBox");
+const resultBox = document.getElementById("resultBox");
+const presetGroup = document.getElementById("presetGroup");
+const presetDesc = document.getElementById("presetDesc");
+const trimPanel = document.getElementById("trimPanel");
+const vid = document.getElementById("vid");
+const startInp = document.getElementById("startInp");
+const endInp = document.getElementById("endInp");
+
+let selectedFile = null;
+let presets = [];
+let currentPreset = "recommended";
+
+// 페이지 로드 시 프리셋 목록 가져오기
+(async function loadPresets() {
+  try {
+    const r = await fetch(API + "/api/steps");
+    const d = await r.json();
+    presets = d.presets || [];
+    renderPresets();
+  } catch (e) { /* 무시 */ }
+})();
+
+function renderPresets() {
+  presetGroup.innerHTML = "";
+  presets.forEach(p => {
+    const btn = document.createElement("button");
+    btn.className = "preset-btn" + (p.id === currentPreset ? " active" : "");
+    btn.textContent = (p.icon ? p.icon + " " : "") + p.label;
+    btn.addEventListener("click", () => selectPreset(p.id));
+    presetGroup.appendChild(btn);
+  });
+  const cur = presets.find(p => p.id === currentPreset);
+  presetDesc.textContent = cur ? cur.desc : "";
+}
+
+function presetById(id) { return presets.find(p => p.id === id); }
+
+// 현재 프리셋의 모델 선택을 stepOptions 에 적용
+function applyPresetValues() {
+  const p = presetById(currentPreset);
+  if (!p || !p.options) return;
+  for (const [stepId, opts] of Object.entries(p.options)) {
+    stepOptions[stepId] = Object.assign({}, stepOptions[stepId] || {}, opts);
+  }
+}
+
+function selectPreset(id) {
+  currentPreset = id;
+  renderPresets();
+  if (job) {            // 업로드 후라면 즉시 단계 옵션에 반영
+    applyPresetValues();
+    render();
+  }
+}
+
+// ---- 구간 선택 ----
+function parseTC(str) {
+  if (!str) return null;
+  str = str.trim();
+  if (str === "") return null;
+  const parts = str.split(":").map(Number);
+  if (parts.some(isNaN)) return null;
+  let sec = 0;
+  for (const p of parts) sec = sec * 60 + p;
+  return sec;
+}
+function fmtTC(sec) {
+  if (sec == null || isNaN(sec)) return "";
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${s.toFixed(1).padStart(4,"0")}`;
+}
+
+document.getElementById("setStart").addEventListener("click", () => {
+  startInp.value = fmtTC(vid.currentTime); applyRange();
+});
+document.getElementById("setEnd").addEventListener("click", () => {
+  endInp.value = fmtTC(vid.currentTime); applyRange();
+});
+document.getElementById("trimReset").addEventListener("click", () => {
+  startInp.value = ""; endInp.value = ""; applyRange();
+});
+startInp.addEventListener("change", applyRange);
+endInp.addEventListener("change", applyRange);
+
+async function applyRange() {
+  if (!job) return;
+  let start = parseTC(startInp.value);
+  let end = parseTC(endInp.value);
+  const dur = vid.duration || null;
+  // 빈 값 보정: 시작만 있으면 끝=영상끝, 끝만 있으면 시작=0
+  if (start != null && end == null && dur) end = dur;
+  if (end != null && start == null) start = 0;
+  const lenEl = document.getElementById("trimLen");
+
+  let body = {};
+  if (start != null && end != null && end > start) {
+    body = { start, end };
+    lenEl.textContent = `구간 ${fmtTC(start)} ~ ${fmtTC(end)} (${(end - start).toFixed(1)}초)`;
+    if (vid.duration) { vid.currentTime = start; }
+  } else {
+    lenEl.textContent = "전체";
+  }
+  try {
+    const r = await fetch(API + "/api/range/" + job.job_id, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    job = await r.json();
+    initSelection();   // 산출물 초기화됐으므로 단계 선택 갱신
+    render();
+  } catch (e) { /* 무시 */ }
+}
+
+fileInput.addEventListener("change", () => {
+  selectedFile = fileInput.files[0] || null;
+  if (selectedFile) {
+    dropText.textContent = "📁 " + selectedFile.name;
+    fileNameEl.textContent = (selectedFile.size / 1048576).toFixed(1) + " MB";
+    uploadBtn.disabled = false;
+  }
+});
+
+uploadBtn.addEventListener("click", async () => {
+  if (!selectedFile) return;
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = "업로드 중...";
+  const fd = new FormData();
+  fd.append("file", selectedFile);
+  try {
+    const r = await fetch(API + "/api/upload", { method: "POST", body: fd });
+    if (!r.ok) throw new Error("업로드 실패");
+    const d = await r.json();
+    const s = await fetch(API + "/api/status/" + d.job_id);
+    job = await s.json();
+    initSelection();
+    initOptions();
+    // 구간 선택 패널 + 영상 로드
+    vid.src = API + "/api/video/" + job.job_id;
+    trimPanel.style.display = "block";
+    startInp.value = "";
+    endInp.value = "";
+    document.getElementById("trimLen").textContent = "전체";
+    jobPanel.style.display = "block";
+    render();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    uploadBtn.textContent = "업로드";
+    uploadBtn.disabled = false;
+  }
+});
+
+// 선택된 단계 id 집합 (사용자가 하고 싶은 단계)
+let selected = new Set();
+let running = false;
+let stepOptions = {};   // stepId -> {key: value} (선택한 툴/모델)
+
+function initSelection() {
+  // 처음엔 아직 완료되지 않은 모든 단계를 선택
+  selected = new Set(job.steps.filter(s => !isDone(s.id)).map(s => s.id));
+}
+
+function initOptions() {
+  stepOptions = {};
+  job.steps.forEach(s => {
+    if (s.options && s.options.length) {
+      stepOptions[s.id] = {};
+      s.options.forEach(o => { stepOptions[s.id][o.key] = o.default; });
+    }
+  });
+  applyPresetValues();   // 선택한 프로필(추천/성능/가성비) 반영
+}
+
+function isDone(id) { return (job.done_steps || []).includes(id); }
+function stepById(id) { return job.steps.find(s => s.id === id); }
+function depsOf(id) { const s = stepById(id); return s ? (s.deps || []) : []; }
+function dependentsOf(id) { return job.steps.filter(s => (s.deps || []).includes(id)).map(s => s.id); }
+
+// 선택 시 필요한 선행 단계(미완료인 것)를 자동 포함
+function ensureDeps(id) {
+  for (const d of depsOf(id)) {
+    if (!isDone(d) && !selected.has(d)) {
+      selected.add(d);
+      ensureDeps(d);
+    }
+  }
+}
+// 해제 시 이 단계에 의존하는 후행 단계도 해제
+function removeDependents(id) {
+  for (const dep of dependentsOf(id)) {
+    if (selected.has(dep)) {
+      selected.delete(dep);
+      removeDependents(dep);
+    }
+  }
+}
+
+function onToggle(id, checked) {
+  if (checked) { selected.add(id); ensureDeps(id); }
+  else { selected.delete(id); removeDependents(id); }
+  render();
+}
+
+runBtn.addEventListener("click", runFlow);
+
+selAllBtn.addEventListener("click", () => {
+  // 완료되지 않은 모든 단계 선택 (+ 선행 단계 자동 포함)
+  job.steps.forEach(s => { if (!isDone(s.id)) { selected.add(s.id); } });
+  job.steps.forEach(s => { if (selected.has(s.id)) ensureDeps(s.id); });
+  render();
+});
+
+selNoneBtn.addEventListener("click", () => {
+  selected.clear();
+  render();
+});
+
+async function runFlow() {
+  // 레지스트리 순서대로 선택된 단계만 실행
+  const queue = job.steps.filter(s => selected.has(s.id));
+  if (queue.length === 0) return;
+
+  running = true;
+  runBtn.disabled = true;
+  errBox.style.display = "none";
+
+  for (const s of queue) {
+    runBtn.textContent = "처리 중... " + s.title;
+    try {
+      const r = await fetch(API + "/api/step/" + job.job_id + "/" + s.id, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(stepOptions[s.id] || {}),
+      });
+      if (!r.ok) throw new Error("서버 오류 (" + r.status + ")");
+      job = await r.json();
+    } catch (e) {
+      errBox.textContent = "⚠ " + e.message;
+      errBox.style.display = "block";
+      break;
+    }
+    if (job.status === "error") { render(); break; }
+    selected.delete(s.id);   // 완료된 단계는 선택 해제
+    render();
+  }
+
+  running = false;
+  runBtn.disabled = false;
+  updateRunButton();
+}
+
+function updateRunButton() {
+  const count = job.steps.filter(s => selected.has(s.id)).length;
+  runBtn.disabled = count === 0;
+  runBtn.textContent = count === 0
+    ? "실행할 단계를 선택하세요"
+    : `▶ 선택한 ${count}개 단계 실행`;
+}
+
+function render() {
+  // 단계 목록 (체크박스 선택)
+  stepList.innerHTML = "";
+  job.steps.forEach((s, i) => {
+    const done = isDone(s.id);
+    const checked = selected.has(s.id);
+    const li = document.createElement("li");
+    li.className = "step" + (done ? " done" : checked ? " current" : "");
+    const optsHtml = (s.options || []).map(o => {
+      const cur = (stepOptions[s.id] || {})[o.key];
+      const choices = o.choices.map(c =>
+        `<option value="${escapeHtml(c.value)}" ${c.value === cur ? "selected" : ""}>${escapeHtml(c.value)}</option>`
+      ).join("");
+      const sel = o.choices.find(c => c.value === cur) || o.choices[0];
+      const info = sel
+        ? `<span class="optinfo">⏱ ${escapeHtml(sel.speed)} · 💰 ${escapeHtml(sel.cost)} · ⭐ ${escapeHtml(sel.quality)}${sel.desc ? ` — ${escapeHtml(sel.desc)}` : ""}</span>`
+        : "";
+      const tiersHtml = (o.tiers || []).map(t =>
+        `<button type="button" class="tierbtn ${t.value === cur ? "active" : ""}"
+           data-step="${s.id}" data-key="${o.key}" data-val="${escapeHtml(t.value)}" ${done ? "disabled" : ""}
+        >${t.icon || ""} ${escapeHtml(t.label)}</button>`
+      ).join("");
+      return `<span class="optwrap">
+        ${tiersHtml ? `<span class="tiers">${tiersHtml}</span>` : ""}
+        <label class="opt" title="${o.hint ? escapeHtml(o.hint) : ""}">
+          <span>${escapeHtml(o.label)}</span>
+          <select class="stepopt" data-step="${s.id}" data-key="${o.key}" ${done ? "disabled" : ""}>${choices}</select>
+        </label>
+        ${info}
+      </span>`;
+    }).join("");
+    li.innerHTML = `
+      <input type="checkbox" class="stepchk" data-id="${s.id}" ${checked ? "checked" : ""}>
+      <span class="badge">${done ? "✓" : i + 1}</span>
+      <span class="title">
+        ${s.title}
+        ${s.tool ? `<span class="tool">🛠 ${escapeHtml(s.tool)}</span>` : ""}
+        ${optsHtml ? `<span class="opts">${optsHtml}</span>` : ""}
+      </span>
+      <span class="tag">${done ? "완료" : checked ? "실행 예정" : "건너뜀"}</span>`;
+    stepList.appendChild(li);
+  });
+  stepList.querySelectorAll(".stepchk").forEach(cb => {
+    cb.addEventListener("change", () => onToggle(cb.dataset.id, cb.checked));
+  });
+  stepList.querySelectorAll(".stepopt").forEach(sel => {
+    sel.addEventListener("change", () => {
+      const sid = sel.dataset.step, key = sel.dataset.key;
+      stepOptions[sid] = stepOptions[sid] || {};
+      stepOptions[sid][key] = sel.value;
+      render();   // 선택에 따른 속도/비용/품질 정보 갱신
+    });
+  });
+  stepList.querySelectorAll(".tierbtn").forEach(b => {
+    b.addEventListener("click", () => {
+      const sid = b.dataset.step, key = b.dataset.key;
+      stepOptions[sid] = stepOptions[sid] || {};
+      stepOptions[sid][key] = b.dataset.val;
+      render();   // 모델 드롭다운 + 정보 갱신
+    });
+  });
+
+  // 오류
+  if (job.status === "error") {
+    errBox.textContent = "⚠ " + (job.error || "오류");
+    errBox.style.display = "block";
+  } else {
+    errBox.style.display = "none";
+  }
+
+  if (!running) updateRunButton();
+
+  renderResults();
+}
+
+function renderResults() {
+  resultBox.innerHTML = "";
+  for (const [stepId, res] of Object.entries(job.results)) {
+    const meta = job.steps.find(s => s.id === stepId);
+    const div = document.createElement("div");
+    div.className = "result";
+    const toolLabel = res.tool_used || (meta ? meta.tool : "");
+    let html = `<div class="rhead">
+        <span class="rtitle">${meta ? meta.title : stepId} 결과</span>
+        ${toolLabel ? `<span class="rtool">🛠 ${escapeHtml(toolLabel)}</span>` : ""}
+      </div>`;
+
+    if (stepId === "audio") {
+      const mb = (res.size_bytes / 1048576).toFixed(2);
+      html += `
+        <div class="kv"><b>오디오 파일</b><span>${res.audio_file}</span></div>
+        <div class="kv"><b>영상 길이</b><span>${fmtDur(res.duration_sec)}</span></div>
+        <div class="kv"><b>크기</b><span>${mb} MB (16kHz mono WAV)</span></div>
+        <div class="kv"><b>다운로드</b><span><a href="/api/result/${job.job_id}/${res.audio_file}">${res.audio_file}</a></span></div>
+        <audio controls src="/api/result/${job.job_id}/${res.audio_file}"></audio>`;
+    } else if (stepId === "whisper") {
+      html += `
+        <div class="kv"><b>자막 세그먼트</b><span>${res.segment_count}개</span></div>
+        <div class="kv"><b>다운로드</b><span><a href="/api/result/${job.job_id}/${res.srt_file}">${res.srt_file}</a></span></div>`;
+      const rows = (res.segments || []).map(s => `
+        <div class="subrow">
+          <span class="tc">${s.start_tc} → ${s.end_tc}</span>
+          <span class="tx">${escapeHtml(s.text)}</span>
+        </div>`).join("");
+      html += `<div class="sublist">${rows}</div>`;
+    } else if (stepId === "correct") {
+      const tc = res.timecodes_preserved
+        ? `<span style="color:var(--ok)">✓ 타임코드 원본과 동일</span>`
+        : `<span style="color:var(--err)">⚠ 세그먼트 수 불일치</span>`;
+      html += `
+        <div class="kv"><b>교정 자막</b><span><a href="/api/result/${job.job_id}/${res.srt_file}">${res.srt_file}</a></span></div>
+        <div class="kv"><b>원본 자막</b><span><a href="/api/result/${job.job_id}/${res.original_srt}">${res.original_srt}</a></span></div>
+        <div class="kv"><b>교정된 문장</b><span>${res.changed_count} / ${res.segment_count}개</span></div>
+        <div class="kv"><b>타임코드</b><span>${tc}</span></div>`;
+      const rows = (res.segments || []).map(s => {
+        if (s.changed) {
+          return `
+            <div class="subrow changed">
+              <span class="tc">${s.start_tc} → ${s.end_tc}</span>
+              <span class="tx"><span class="old">${escapeHtml(s.original)}</span><span class="arrow">→</span><span class="new">${escapeHtml(s.corrected)}</span></span>
+            </div>`;
+        }
+        return `
+          <div class="subrow">
+            <span class="tc">${s.start_tc} → ${s.end_tc}</span>
+            <span class="tx">${escapeHtml(s.corrected)}</span>
+          </div>`;
+      }).join("");
+      html += `<div class="legend">🟢 강조된 줄 = 교정됨 (타임코드는 그대로)</div>`;
+      html += `<div class="sublist">${rows}</div>`;
+    } else if (stepId === "scenes") {
+      html += `<div class="kv"><b>감지된 장면</b><span>${res.scene_count}개</span></div>`;
+      html += `<div class="scene-grid">`;
+      for (const sc of res.scenes) {
+        const img = sc.thumbnail
+          ? `<img src="/api/result/${job.job_id}/${sc.thumbnail}" loading="lazy" alt="scene ${sc.scene_no}">`
+          : `<div class="noimg">미리보기 없음</div>`;
+        html += `
+          <div class="scene-card">
+            ${img}
+            <div class="meta">
+              <div class="no">#${sc.scene_no}</div>
+              <div class="tc">${sc.start_tc.slice(0,8)} → ${sc.end_tc.slice(0,8)}</div>
+              <div class="tc">${sc.duration.toFixed(1)}s</div>
+            </div>
+          </div>`;
+      }
+      html += `</div>`;
+    } else if (stepId === "quality") {
+      const dur = res.duration || 1;
+      const pct = t => Math.min(100, Math.max(0, (t / dur) * 100));
+      const blackBlocks = (res.black_segments || []).map(b => {
+        const left = pct(b.start);
+        const w = Math.max(0.5, pct(b.end) - left);
+        return `<div class="tl-black" style="left:${left}%;width:${w}%" title="${b.start_tc} → ${b.end_tc} (${b.duration}s)"></div>`;
+      }).join("");
+      const spikeTicks = (res.audio_spikes || []).map(s =>
+        `<div class="tl-spike ${s.clip ? "clip" : ""}" style="left:${pct(s.time)}%" title="${s.time_tc} · ${s.type} · ${s.lkfs} LKFS${s.jump_lu != null ? " · +" + s.jump_lu + " LU" : ""}"></div>`
+      ).join("");
+
+      html += `
+        <div class="kv"><b>영상 길이</b><span>${res.duration_tc}</span></div>
+        <div class="kv"><b>블랙 화면</b><span>${res.black_count}건</span></div>
+        <div class="kv"><b>음성 튐</b><span>${res.spike_count}건</span></div>
+        <div class="tl-wrap">
+          <div class="tl-lane">
+            <span class="tl-label">🎞 영상</span>
+            <div class="tl-track">${blackBlocks || ""}</div>
+          </div>
+          <div class="tl-lane">
+            <span class="tl-label">🔊 오디오</span>
+            <div class="tl-track">${spikeTicks || ""}</div>
+          </div>
+          <div class="tl-ticks"><span>00:00</span><span>${res.duration_tc.slice(3)}</span></div>
+        </div>`;
+
+      const issues = [];
+      for (const b of (res.black_segments || []))
+        issues.push({ t: b.start, html: `<span class="ico">⬛</span><span class="tc">${b.start_tc} → ${b.end_tc}</span><span>블랙 화면 ${b.duration}초</span>` });
+      for (const s of (res.audio_spikes || []))
+        issues.push({ t: s.time, html: `<span class="ico">🔴</span><span class="tc">${s.time_tc}</span><span>음성 ${s.type}</span><span class="pill ${s.clip ? "clip" : ""}">${s.lkfs} LKFS${s.jump_lu != null ? " (+" + s.jump_lu + " LU)" : ""}</span>` });
+      issues.sort((a, b) => a.t - b.t);
+
+      if (issues.length === 0) {
+        html += `<div class="tl-none">✓ 블랙 화면·음성 튐이 감지되지 않았습니다.</div>`;
+      } else {
+        html += `<div class="issue-list">` +
+          issues.map(i => `<div class="issue-row">${i.html}</div>`).join("") +
+          `</div>`;
+      }
+    } else if (stepId === "analyze") {
+      html += `<div class="kv"><b>분석된 장면</b><span>${res.scene_count}개</span></div>`;
+      html += `<div class="analyze-grid">`;
+      for (const sc of res.scenes) {
+        const a = sc.analysis || {};
+        const img = sc.thumbnail
+          ? `<img src="/api/result/${job.job_id}/${sc.thumbnail}" loading="lazy" alt="scene ${sc.scene_no}">`
+          : "";
+        const chips = (a.keywords || []).map(k => `<span class="chip">${escapeHtml(k)}</span>`).join("");
+        html += `
+          <div class="acard">
+            ${img}
+            <div class="body">
+              <div class="no">#${sc.scene_no}</div>
+              <div class="tc">${sc.start_tc.slice(0,8)} → ${sc.end_tc.slice(0,8)} · 자막 ${sc.subtitle_count}개</div>
+              <div class="sum">${escapeHtml(a.summary || "")}</div>
+              ${a.mood ? `<div class="mood">분위기: ${escapeHtml(a.mood)}</div>` : ""}
+              <div class="chips">${chips}</div>
+            </div>
+          </div>`;
+      }
+      html += `</div>`;
+    } else if (stepId === "merge") {
+      const dl = res.outputs.map(o =>
+        `<a href="/api/result/${job.job_id}/${o.name}" download>${o.name}<span class="sub">${o.label}</span></a>`
+      ).join("");
+      html = `
+        <div class="final">
+          <div class="big">🎉 분석 완료!</div>
+          <div style="color:var(--muted);font-size:13px">${escapeHtml(res.video)} · ${res.duration}</div>
+          <div class="stats">
+            <div class="stat"><div class="v">${res.scene_count}</div><div class="l">장면</div></div>
+            <div class="stat"><div class="v">${res.subtitle_count}</div><div class="l">자막</div></div>
+          </div>
+          <div class="dl">${dl}</div>
+        </div>`;
+    } else {
+      html += `<pre style="white-space:pre-wrap;margin:0">${JSON.stringify(res, null, 2)}</pre>`;
+    }
+    div.innerHTML = html;
+    resultBox.appendChild(div);
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function fmtDur(sec) {
+  if (!sec) return "-";
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+</script>
+</body>
+</html>
